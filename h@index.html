@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SIIS — 4 Level Adventure</title>
+<style>
+body{margin:0;background:#000;color:#fff;font-family:sans-serif}
+header{background:#111;padding:10px 16px;position:sticky;top:0}
+canvas{display:block;width:100%;height:auto;touch-action:none}
+.hud{display:flex;justify-content:space-between;padding:8px 16px;background:#111}
+.controls{display:none}
+@media(max-width:900px){
+  .controls{display:grid;grid-template-columns:repeat(3,64px);gap:6px;position:absolute;right:10px;bottom:10px}
+  .controls button{width:64px;height:64px;border-radius:12px;border:1px solid rgba(255,255,255,0.2);background:rgba(0,0,0,0.35);color:#fff;font-weight:800;font-size:20px}
+  .controls .up{grid-column:2}
+  .controls .left{grid-column:1}
+  .controls .right{grid-column:3}
+  .controls .down{grid-column:2}
+}
+</style>
+</head>
+<body>
+<header>🦙 SIIS — 4 Level Adventure</header>
+<div class="hud">
+  <div id="levelInfo"></div>
+  <div id="metrics"></div>
+</div>
+<div style="position:relative">
+  <canvas id="game" width="960" height="540"></canvas>
+  <div class="controls" id="controls">
+    <button class="up">▲</button>
+    <button class="left">◀</button>
+    <button class="right">▶</button>
+    <button class="down">▼</button>
+  </div>
+</div>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const input={up:false,down:false,left:false,right:false};
+addEventListener('keydown',e=>{
+  const k=e.code||e.key;
+  if(['ArrowUp','KeyW','w','W'].includes(k)){input.up=true;e.preventDefault();}
+  if(['ArrowDown','KeyS','s','S'].includes(k)){input.down=true;e.preventDefault();}
+  if(['ArrowLeft','KeyA','a','A'].includes(k)){input.left=true;e.preventDefault();}
+  if(['ArrowRight','KeyD','d','D'].includes(k)){input.right=true;e.preventDefault();}
+});
+addEventListener('keyup',e=>{
+  const k=e.code||e.key;
+  if(['ArrowUp','KeyW','w','W'].includes(k))input.up=false;
+  if(['ArrowDown','KeyS','s','S'].includes(k))input.down=false;
+  if(['ArrowLeft','KeyA','a','A'].includes(k))input.left=false;
+  if(['ArrowRight','KeyD','d','D'].includes(k))input.right=false;
+});
+const controls=document.getElementById('controls');
+if(matchMedia('(max-width:900px)').matches)controls.style.display='grid';
+controls.querySelectorAll('button').forEach(btn=>{
+  btn.addEventListener('touchstart',e=>{
+    const c=e.target.classList;
+    if(c.contains('up'))input.up=true;
+    if(c.contains('down'))input.down=true;
+    if(c.contains('left'))input.left=true;
+    if(c.contains('right'))input.right=true;
+  });
+  btn.addEventListener('touchend',()=>{input.up=input.down=input.left=input.right=false;});
+});
+
+const player={x:W/2,y:H/2,vx:0,vy:0,speed:0.3,max:3,friction:0.88,r:18};
+const camera={x:player.x,y:player.y};
+const world={t:0,startedAt:0,distance:0};
+let currentLevel=0;
+
+const levels=[
+  {name:"Quipu Realm",emoji:"🧶",color:"#ffd166",bg:"#1a2238"},
+  {name:"Tech Innovations",emoji:"⚙️",color:"#06d6a0",bg:"#0b2740"},
+  {name:"Agricultural Highlands",emoji:"🥔",color:"#ef476f",bg:"#2e3b2f"},
+  {name:"Medicine & Botany",emoji:"🌿",color:"#5bc0be",bg:"#1e3b2f"}
+];
+let collectibles=[];
+
+function initLevel(){
+  const lvl=levels[currentLevel];
+  collectibles=[];
+  for(let i=0;i<5;i++){
+    collectibles.push({x:Math.random()*(W*0.8)+W*0.1,y:Math.random()*(H*0.8)+H*0.1,collected:false});
+  }
+  document.getElementById('levelInfo').textContent=`Level ${currentLevel+1}/4 — ${lvl.name}`;
+}
+initLevel();
+
+function updateHUD(){
+  document.getElementById('metrics').textContent=`Time: ${world.startedAt?Math.floor((performance.now()-world.startedAt)/1000)+'s':'0s'} • Distance: ${Math.floor(world.distance)}m`;
+}
+
+function loop(t){
+  const dt=t-(world.last||t);world.last=t;world.t+=dt;
+  if(world.startedAt===0&&(input.up||input.down||input.left||input.right))world.startedAt=performance.now();
+  const a=player.speed*dt;
+  if(input.up)player.vy-=a;
+  if(input.down)player.vy+=a;
+  if(input.left)player.vx-=a;
+  if(input.right)player.vx+=a;
+  const sp=Math.hypot(player.vx,player.vy);
+  if(sp>player.max){player.vx*=player.max/sp;player.vy*=player.max/sp;}
+  player.vx*=player.friction;player.vy*=player.friction;
+  const ox=player.x,oy=player.y;
+  player.x+=player.vx;player.y+=player.vy;
+  world.distance+=Math.hypot(player.x-ox,player.y-oy)/110;
+  camera.x+=(player.x-camera.x)*0.1;camera.y+=(player.y-camera.y)*0.1;
+
+  // Draw background
+  ctx.fillStyle=levels[currentLevel].bg;
+  ctx.fillRect(0,0,W,H);
+
+  // Draw collectibles
+  collectibles.forEach(c=>{
+    if(c.collected)return;
+    ctx.save();
+    ctx.translate(c.x-(camera.x-W/2),c.y-(camera.y-H/2));
+    ctx.shadowColor=levels[currentLevel].color;ctx.shadowBlur=18;
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.font='30px "Segoe UI Emoji"';
+    ctx.fillText(levels[currentLevel].emoji,0,0);
+    ctx.restore();
+  });
+
+  // Draw player
+  const px=player.x-(camera.x-W/2),py=player.y-(camera.y-H/2);
+  ctx.save();
+  ctx.shadowColor='#5bc0be';ctx.shadowBlur=16;
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font='44px "Segoe UI Emoji"';
+  ctx.fillText('🦙',px,py);
+  ctx.restore();
+
+  // Check collisions
+  collectibles.forEach(c=>{
+    if(!c.collected && Math.hypot(player.x-c.x,player.y-c.y)<player.r+20){
+      c.collected=true;
+    }
+  });
+
+  // Level complete?
+  if(collectibles.every(c=>c.collected)){
+    currentLevel++;
+    if(currentLevel<levels.length){
+      initLevel();
+    }else{
+      alert("🎉 All levels complete! Thanks for playing.");
+      currentLevel=0;initLevel();
+    }
+  }
+
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
